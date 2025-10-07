@@ -200,42 +200,6 @@ export class OpusDecoder<
     this.wasm.free(this._decoder);
   }
 
-  _decode(opusFrame: Uint8Array): {
-    outputBuffer: TypedArrayAllocation<Int16Array>;
-    samplesDecoded: number;
-    error?: string;
-  } {
-    if (!(opusFrame instanceof Uint8Array)) {
-      throw new Error(
-        `Data to decode must be Uint8Array. Instead got ${typeof opusFrame}`
-      );
-    }
-
-    this._input.buf.set(opusFrame);
-
-    let samplesDecoded = this.wasm.opus_frame_decode(
-      this._decoder,
-      this._input.ptr,
-      opusFrame.length,
-      this._output.ptr
-    );
-
-    let error: string | undefined;
-
-    if (samplesDecoded < 0) {
-      error = `libopus ${samplesDecoded} ${OpusDecoder.errors.get(samplesDecoded) || "Unknown Error" }`;
-
-      console.error(error);
-      samplesDecoded = 0;
-    }
-
-    return {
-      outputBuffer: this._output,
-      samplesDecoded,
-      error,
-    };
-  }
-
   addError(
     errors: DecodeError[],
     message: string,
@@ -253,22 +217,6 @@ export class OpusDecoder<
     });
   }
 
-  getDecodedAudio<SR extends OpusDecoderSampleRate>(
-    errors: DecodeError[],
-    pcmData: TypedArrayAllocation<Int16Array>,
-    channels: number,
-    samplesDecoded: number,
-    sampleRate: SR,
-  ): OpusDecodedAudio<SR> {
-    return {
-      errors,
-      pcmData,
-      channels,
-      samplesDecoded,
-      sampleRate,
-    }
-  }
-
   decodeFrame(
     opusFrame: Uint8Array
   ): OpusDecodedAudio<
@@ -276,71 +224,44 @@ export class OpusDecoder<
   > {
     const errors: DecodeError[] = [];
 
-    const decoded = this._decode(opusFrame);
+    this._input.buf.set(opusFrame);
 
-    if (decoded.error) {
+    let samplesDecoded = this.wasm.opus_frame_decode(
+      this._decoder,
+      this._input.ptr,
+      opusFrame.length,
+      this._output.ptr
+    );
+
+    if (samplesDecoded < 0) {
+      const error = `libopus ${samplesDecoded} ${OpusDecoder.errors.get(samplesDecoded) || "Unknown Error" }`;
+
+      console.error(error);
+
       this.addError(
         errors,
-        decoded.error,
+        error,
         opusFrame.length,
         this._frameNumber,
         this._inputBytes,
         this._outputSamples
       );
+
+      samplesDecoded = 0;
     }
 
     this._frameNumber++;
     this._inputBytes += opusFrame.length;
-    this._outputSamples += decoded.samplesDecoded;
+    this._outputSamples += samplesDecoded;
 
-    return this.getDecodedAudio(
+    return {
       errors,
-      decoded.outputBuffer,
-      this._channels,
-      decoded.samplesDecoded,
-      this._sampleRate
-    ) as OpusDecodedAudio<
+      pcmData: this._output,
+      channels: this._channels,
+      samplesDecoded,
+      sampleRate: this._sampleRate,
+    } as OpusDecodedAudio<
       SampleRate extends undefined ? OpusDecoderDefaultSampleRate : SampleRate
     >;
   }
-
-  /* TODO */
-  /*
-  decodeFrames(opusFrames: Uint8Array[]): OpusDecodedAudio<
-    SampleRate extends undefined ? OpusDecoderDefaultSampleRate : SampleRate
-  > {
-    const outputBuffers: TypedArrayAllocation<Int16Array>[] = [];
-    const errors: DecodeError[] = [];
-    let samplesDecoded = 0;
-
-    for (const opusFrame of opusFrames) {
-      const decoded = this._decode(opusFrame);
-
-      outputBuffers.push(decoded.outputBuffer);
-      samplesDecoded += decoded.samplesDecoded;
-
-      if (decoded.error) {
-        this._common.addError(
-          errors,
-          decoded.error,
-          opusFrame.length,
-          this._frameNumber,
-          this._inputBytes,
-          this._outputSamples
-        );
-      }
-
-      this._frameNumber++;
-      this._inputBytes += opusFrame.length;
-      this._outputSamples += decoded.samplesDecoded;
-    }
-
-    return this._WASMAudioDecoderCommon.getDecodedAudioMultiChannel(
-      errors,
-      outputBuffers,
-      this._outputChannels,
-      samplesDecoded,
-      this._sampleRate
-    );
-  } */
 }
