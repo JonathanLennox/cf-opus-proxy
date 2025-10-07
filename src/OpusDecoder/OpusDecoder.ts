@@ -41,8 +41,6 @@ interface OpusWasmInstance {
   opus_frame_decode: (decoder: number, inputPtr: number, inputLength: number, outputPtr: number) => number;
   malloc: (size: number) => number;
   free: (ptr: number) => void;
-  HEAPU8: Uint8Array;
-  HEAP16: Int16Array;
   HEAP: ArrayBuffer;
   module: any;
 }
@@ -52,8 +50,6 @@ interface TypedArrayAllocation<T extends Uint8Array | Int16Array> {
   len: number;
   buf: T;
 }
-
-type TypedArray = Uint8Array | Int16Array
 
 type TypedArrayConstructor = Uint8ArrayConstructor | Int16ArrayConstructor;
 
@@ -84,8 +80,6 @@ export class OpusDecoder<
               opus_frame_decode: module._opus_frame_decode,
               malloc: module._malloc,
               free: module._free,
-              HEAPU8: module.HEAPU8,
-              HEAP16: module.HEAP16,
               HEAP: module.wasmMemory.buffer,
               module
           })
@@ -164,16 +158,6 @@ export class OpusDecoder<
     return this._init();
   }
 
-  allocateTypedArray<T extends Uint8Array>(
-    len: number,
-    TypedArray: Uint8ArrayConstructor,
-    setPointer?: boolean
-  ): TypedArrayAllocation<T>;
-  allocateTypedArray<T extends Int16Array>(
-    len: number,
-    TypedArray: Int16ArrayConstructor,
-    setPointer?: boolean
-  ): TypedArrayAllocation<T>;
   allocateTypedArray<T extends Uint8Array | Int16Array>(
     len: number,
     TypedArray: TypedArrayConstructor,

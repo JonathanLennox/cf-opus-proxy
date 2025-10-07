@@ -69,7 +69,7 @@ define OPUS_DECODER_EMCC_OPTS
   , '_opus_frame_decode' \
   , '_opus_frame_decoder_create' \
 ]" \
--s EXPORTED_RUNTIME_METHODS="['wasmMemory', 'HEAPU8', 'HEAP16']" \
+-s EXPORTED_RUNTIME_METHODS="['wasmMemory']" \
 -I "$(LIBOPUS_SRC)/include" \
 $(OPUS_DECODER_SRC)/opus_frame_decoder.c
 endef
@@ -111,5 +111,5 @@ libopus-configure: $(LIBOPUS_BUILD)/Makefile
 	  --disable-shared
 	cd $(LIBOPUS_BUILD); rm -f a.wasm
 
-$(LIBOPUS_SRC)/configure:
+$(LIBOPUS_SRC)/configure: $(LIBOPUS_SRC)/configure.ac
 	cd $(LIBOPUS_SRC); ./autogen.sh
