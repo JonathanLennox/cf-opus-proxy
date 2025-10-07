@@ -42,6 +42,7 @@ opus-wasmlib: $(LIBOPUS_WASM_LIB)
 # common EMCC options
 define EMCC_OPTS
 -O2 \
+-msimd128 \
 --minify 0 \
 -s WASM=1 \
 -s TEXTDECODER=2 \
@@ -61,7 +62,6 @@ endef
 # opus-decoder
 # ------------------
 define OPUS_DECODER_EMCC_OPTS
--s JS_MATH \
 -s INITIAL_MEMORY=28MB \
 -s EXPORTED_FUNCTIONS="[ \
     '_free', '_malloc' \
@@ -70,8 +70,6 @@ define OPUS_DECODER_EMCC_OPTS
   , '_opus_frame_decoder_create' \
 ]" \
 -s EXPORTED_RUNTIME_METHODS="['wasmMemory', 'HEAPU8', 'HEAP16']" \
---pre-js '$(OPUS_DECODER_SRC)/emscripten-pre.js' \
---post-js '$(OPUS_DECODER_SRC)/emscripten-post.js' \
 -I "$(LIBOPUS_SRC)/include" \
 $(OPUS_DECODER_SRC)/opus_frame_decoder.c
 endef
@@ -105,7 +103,7 @@ libopus-configure: $(LIBOPUS_BUILD)/Makefile
 
  $(LIBOPUS_BUILD)/Makefile: $(LIBOPUS_SRC)/configure
 	mkdir -p $(LIBOPUS_BUILD)
-	cd $(LIBOPUS_BUILD); CFLAGS="-O3" emconfigure $(CURDIR)/$(LIBOPUS_SRC)/configure \
+	cd $(LIBOPUS_BUILD); CFLAGS="-O3 -msimd128" emconfigure $(CURDIR)/$(LIBOPUS_SRC)/configure \
 	  --host=wasm32-unknown-emscripten \
 	  --enable-float-approx \
 	  --disable-rtcd \
