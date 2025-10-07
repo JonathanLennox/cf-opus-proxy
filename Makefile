@@ -74,7 +74,7 @@ define OPUS_DECODER_EMCC_OPTS
 $(OPUS_DECODER_SRC)/opus_frame_decoder.c
 endef
 
-$(OPUS_DECODER_EMSCRIPTEN_BUILD): $(LIBOPUS_WASM_LIB)
+$(OPUS_DECODER_EMSCRIPTEN_BUILD): $(LIBOPUS_WASM_LIB) $(OPUS_DECODER_SRC)/opus_frame_decoder.c $(OPUS_DECODER_SRC)/opus_frame_decoder.h
 	mkdir -p $(OPUS_DECODER_BUILD)
 	@ echo "Building Emscripten WebAssembly module $(OPUS_DECODER_EMSCRIPTEN_BUILD)..."
 	emcc \

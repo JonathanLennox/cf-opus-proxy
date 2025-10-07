@@ -151,6 +151,12 @@ export class OpusDecoder<
       this._sampleRate,
       this._channels
     );
+
+    if (this._decoder < 0) {
+        const error = `libopus opus_decoder_create failed: ${OpusDecoder.errors.get(this._decoder) || "Unknown Error" }`;
+        console.error(error);
+        throw Error(error);
+    }
   }
 
   async reset(): Promise<void> {

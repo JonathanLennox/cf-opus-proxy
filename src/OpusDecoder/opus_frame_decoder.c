@@ -1,4 +1,6 @@
 #include <emscripten.h>
+#include <assert.h>
+#include <stdlib.h>
 #include "opus_frame_decoder.h"
 // Code adapted from wasm-audio-deocders https://eshaz.github.io/wasm-audio-decoders/
 // "The source code that originates in this project is licensed under
@@ -12,29 +14,31 @@
 #define MAX_PACKET_DURATION_SAMPLES 5760
 
 EMSCRIPTEN_KEEPALIVE
-OpusFrameDecoder *opus_frame_decoder_create(int sample_rate, int channels) {
-    OpusFrameDecoder decoder;
-    decoder.channels = channels;
-    decoder.errors = 0;
-    
-    decoder.st = opus_decoder_create(
-      sample_rate, 
-      channels, 
-      &decoder.errors
+OpusDecoder *opus_frame_decoder_create(int sample_rate, int channels) {
+    OpusDecoder* decoder;
+    int error = 0;
+
+    decoder = opus_decoder_create(
+      sample_rate,
+      channels,
+      &error
     );
 
-    OpusFrameDecoder *ptr = malloc(sizeof(decoder));
-    *ptr = decoder;
-    return ptr;
+    if (decoder == NULL) {
+        assert(error < 0);
+        return (OpusDecoder*)error; // emscripten pointers will always be positive
+    }
+
+    return decoder;
 }
 
 EMSCRIPTEN_KEEPALIVE
-int opus_frame_decode(OpusFrameDecoder *decoder, const unsigned char *in, opus_int32 in_len, opus_int16 *out) {
+int opus_frame_decode(OpusDecoder *decoder, const unsigned char *in, opus_int32 in_len, opus_int16 *out) {
     int samples_decoded = opus_decode(
-      decoder->st, 
-      in, 
-      in_len, 
-      out, 
+      decoder,
+      in,
+      in_len,
+      out,
       MAX_PACKET_DURATION_SAMPLES,
       0 // disable forward error correction // TODO
     );
@@ -43,11 +47,8 @@ int opus_frame_decode(OpusFrameDecoder *decoder, const unsigned char *in, opus_i
 }
 
 EMSCRIPTEN_KEEPALIVE
-void opus_frame_decoder_destroy(OpusFrameDecoder *decoder) {
+void opus_frame_decoder_destroy(OpusDecoder *decoder) {
     if (decoder) {
-        if (decoder->st) {
-            opus_decoder_destroy(decoder->st);
-        }
-        free(decoder);
+      opus_decoder_destroy(decoder);
     }
 }
