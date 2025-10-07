@@ -7,9 +7,9 @@
 // submodules and compiled into the dist files, may have different
 // licensing terms."
 
-// out should be able to store frame_size*channels*sizeof(float) 
+// out should be able to store frame_size*channels*sizeof(opus_int16)
 // frame_size should be the maximum packet duration (120ms; 5760 for 48kHz)
-#define MAX_PACKET_DURATION_MS 5760
+#define MAX_PACKET_DURATION_SAMPLES 5760
 
 EMSCRIPTEN_KEEPALIVE
 OpusFrameDecoder *opus_frame_decoder_create(int sample_rate, int channels) {
@@ -35,7 +35,7 @@ int opus_frame_decode(OpusFrameDecoder *decoder, const unsigned char *in, opus_i
       in, 
       in_len, 
       out, 
-      MAX_PACKET_DURATION_MS, 
+      MAX_PACKET_DURATION_SAMPLES,
       0 // disable forward error correction // TODO
     );
     
