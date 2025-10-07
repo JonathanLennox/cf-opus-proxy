@@ -1,0 +1,3 @@
+[submodule "src/OpusDecoder/opus"]
+	path = src/OpusDecoder/opus
+	url = https://github.com/xiph/opus.git

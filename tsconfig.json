@@ -23,6 +23,8 @@
 
 		/* Disable emitting files from a compilation. */
 		"noEmit": true,
+		/* Generate source maps for debugging. */
+		"sourceMap": true,
 
 		/* Ensure that each file can be safely transpiled without relying on other imports. */
 		"isolatedModules": true,

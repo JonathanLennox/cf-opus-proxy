@@ -3,9 +3,14 @@
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
-		"deploy": "wrangler deploy",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
+		"format": "prettier --write '**/*.{js,ts,css,json,md}'",
+		"configure": "make configure -j$(node -e 'console.log(require(\"os\").cpus().length)')",
+		"build": "make -j$(node -e 'console.log(require(\"os\").cpus().length)') && tsc",
+		"build:wasm": "make -j$(node -e 'console.log(require(\"os\").cpus().length)')",
+		"build:ts": "tsc",
+		"dev": "npm run build && wrangler dev",
+		"deploy": "npm run build && wrangler deploy",
+		"typecheck": "tsc --noEmit",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},
