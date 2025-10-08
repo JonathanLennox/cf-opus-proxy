@@ -7,6 +7,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		OPENAI_API_KEY: string;
+		TRANSCRIPTIONATOR: DurableObjectNamespace;
 	}
 }
 interface Env extends Cloudflare.Env {}
