@@ -4,13 +4,11 @@ import { TranscriberProxy } from "./transcriberproxy";
 import { extractSessionParameters } from "./utils";
 
 export class Transcriptionator extends DurableObject<Env> {
-    private transcribers: Map<string, TranscriberProxy>;
     private observers: Set<WebSocket>;
 
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
 
-        this.transcribers = new Map();
         this.observers = new Set();
         this.env = env;
     }
@@ -21,15 +19,15 @@ export class Transcriptionator extends DurableObject<Env> {
 
         server.accept();
 
-        const { tag, transcribe } = extractSessionParameters(request.url);
+        const transcribe = extractSessionParameters(request.url);
 
-        console.log("New WebSocket connection:", { url: request.url, tag, transcribe });
+        console.log("New WebSocket connection:", { url: request.url, transcribe });
 
         if (transcribe) {
-            const session = new TranscriberProxy(server, tag!, this.env);
+            const session = new TranscriberProxy(server, this.env);
 
             session.on("closed", () => {
-                this.transcribers.delete(tag!);
+                // Close observers?
             });
 
             session.on("message", (data: any) => {
@@ -37,8 +35,6 @@ export class Transcriptionator extends DurableObject<Env> {
                     observer.send(data);
                 });
             });
-
-            this.transcribers.set(tag!, session);
         } else {
             this.observers.add(server);
             server.addEventListener("close", () => {

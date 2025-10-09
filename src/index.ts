@@ -12,7 +12,7 @@ export default {
             return new Response("Worker expected GET method", { status: 400 });
         }
 
-        const { url, sessionId, tag, transcribe } = extractSessionParameters(request.url);
+        const { url, sessionId, transcribe } = extractSessionParameters(request.url);
 
         if (!url.pathname.endsWith("/events") && !url.pathname.endsWith("/transcribe")) {
             return new Response("Bad URL", { status: 400 });
@@ -20,10 +20,6 @@ export default {
 
         if (!sessionId) {
             return new Response("Missing sessionId", { status: 400 });
-        }
-
-        if (transcribe && !tag) {
-            return new Response("Missing tag", { status: 400 });
         }
 
         // Requests from all Workers to the Durable Object instance named "foo"

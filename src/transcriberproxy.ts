@@ -2,13 +2,11 @@ import { OutgoingConnection } from './OutgoingConnection';
 
 export class TranscriberProxy {
     private readonly ws: WebSocket;
-    private readonly tag: string;
     private outgoingConnections: Map<string, OutgoingConnection>;
     private eventListeners: Map<string, Array<(...args: any[]) => void>>;
 
-    constructor(ws: WebSocket, tag: string, env: Env) {
+    constructor(ws: WebSocket, env: Env) {
         this.ws = ws;
-        this.tag = tag;
         this.outgoingConnections = new Map<string, OutgoingConnection>;
         this.eventListeners = new Map();
 
