@@ -1,4 +1,3 @@
-import { Transcriptionator } from "./transcriptionator"
 import { extractSessionParameters } from "./utils";
 
 export default {
@@ -34,3 +33,5 @@ export default {
         return stub.fetch(request);
 	},
 } satisfies ExportedHandler<Env>;
+
+export { Transcriptionator } from "./transcriptionator"
