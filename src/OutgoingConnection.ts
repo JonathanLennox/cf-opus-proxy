@@ -1,4 +1,5 @@
 import { OpusDecoder } from './OpusDecoder/OpusDecoder';
+import { TranscriberProxy } from './transcriberproxy';
 
 // Type definition augmentation for Uint8Array polyfills
 declare global {
@@ -11,9 +12,9 @@ declare global {
 }
 
 const OPENAI_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
-const WEBHOOK_URL = 'https://webhook.site/58077f5f-5493-4e6b-a52d-c6cecb19c9f2';
 
 export class OutgoingConnection {
+	transcriberProxy: TranscriberProxy;
 	tag: string;
 	connectionStatus: 'pending' | 'connected' | 'failed';
     decoderStatus: 'pending' | 'ready' | 'failed';
@@ -22,7 +23,8 @@ export class OutgoingConnection {
 	private pendingOpusFrames: Uint8Array[] = [];
 	private pendingAudioData: string[] = [];
 
-	constructor(tag: string, env: any) {
+	constructor(transcriberProxy: TranscriberProxy, tag: string, env: any) {
+		this.transcriberProxy = transcriberProxy;
 		this.tag = tag;
 		this.connectionStatus = 'pending';
         this.decoderStatus = 'pending';
@@ -247,7 +249,6 @@ export class OutgoingConnection {
 	}
 
 	private async handleOpenAIMessage(data: any): Promise<void> {
-		console.log(`Received message from OpenAI: ${data}`);
 		let parsedMessage;
 		try {
 			parsedMessage = JSON.parse(data);
@@ -255,29 +256,18 @@ export class OutgoingConnection {
 			console.error(`Failed to parse OpenAI message as JSON for tag ${this.tag}:`, parseError);
 			parsedMessage = { raw: data, parseError: true };
 		}
+		let messageToSend: any = undefined;
 
-		// Add the connection tag to the parsed message
-		const messageWithTag = {
-			...parsedMessage,
-			tag: this.tag
-		};
+		if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
+			 messageToSend = {
+				tag: this.tag,
+				transcript: parsedMessage.transcript
+			}
+		}
+		// TODO: some use cases will want the audio transcription deltas also, and maybe other messages
 
-		// Post to webhook
-		try {
-			await fetch(WEBHOOK_URL, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					message: messageWithTag,
-					timestamp: new Date().toISOString(),
-					source: 'openai-websocket'
-				})
-			});
-			console.log(`Posted OpenAI response to webhook for tag: ${this.tag}`);
-		} catch (error) {
-			console.error(`Failed to post OpenAI response to webhook for tag ${this.tag}:`, error);
+		if (messageToSend) {
+			this.transcriberProxy.emit("message", JSON.stringify(messageToSend))
 		}
 	}
 }

@@ -19,7 +19,7 @@ export class Transcriptionator extends DurableObject<Env> {
 
         server.accept();
 
-        const transcribe = extractSessionParameters(request.url);
+        const { transcribe } = extractSessionParameters(request.url);
 
         console.log("New WebSocket connection:", { url: request.url, transcribe });
 
@@ -31,6 +31,7 @@ export class Transcriptionator extends DurableObject<Env> {
             });
 
             session.on("message", (data: any) => {
+                console.log(`Sending message ${data} to ${this.observers.size} observers`);
                 this.observers.forEach((observer) => {
                     observer.send(data);
                 });

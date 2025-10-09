@@ -35,7 +35,7 @@ export class TranscriberProxy {
         const tag = parsedMessage.media?.tag;
         if (tag) {
             if (!this.outgoingConnections.has(tag)) {
-                const connection = new OutgoingConnection(tag, env);
+                const connection = new OutgoingConnection(this, tag, env);
                 this.outgoingConnections.set(tag, connection);
                 console.log(`Created outgoing connection entry for tag: ${tag}`);
             }
