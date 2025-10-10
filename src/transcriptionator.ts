@@ -1,7 +1,4 @@
-import { DurableObject} from "cloudflare:workers"
-
-import { TranscriberProxy } from "./transcriberproxy";
-import { extractSessionParameters } from "./utils";
+import { DurableObject, RpcTarget } from "cloudflare:workers"
 
 export class Transcriptionator extends DurableObject<Env> {
     private observers: Set<WebSocket>;
@@ -14,40 +11,45 @@ export class Transcriptionator extends DurableObject<Env> {
     }
 
     async fetch(request: Request): Promise<Response> {
+        // Only handle observer connections now
         const webSocketPair = new WebSocketPair();
         const [client, server] = Object.values(webSocketPair);
 
         server.accept();
 
-        const { transcribe } = extractSessionParameters(request.url);
+        console.log("New observer WebSocket connection");
 
-        console.log("New WebSocket connection:", { url: request.url, transcribe });
-
-        if (transcribe) {
-            const session = new TranscriberProxy(server, this.env);
-
-            session.on("closed", () => {
-                // Close observers?
-            });
-
-            session.on("message", (data: any) => {
-                console.log(`Sending message ${data} to ${this.observers.size} observers`);
-                this.observers.forEach((observer) => {
-                    observer.send(data);
-                });
-            });
-        } else {
-            this.observers.add(server);
-            server.addEventListener("close", () => {
-                this.observers.delete(server);
-                server.close();
-            });
-        }
+        this.observers.add(server);
+        server.addEventListener("close", () => {
+            this.observers.delete(server);
+            server.close();
+        });
 
         return new Response(null, {
             status: 101,
             webSocket: client,
         });
+    }
+
+    // RPC method to broadcast messages to all observers
+    broadcastMessage(data: string): void {
+        console.log(`Broadcasting message to ${this.observers.size} observers`);
+        this.observers.forEach((observer) => {
+            try {
+                observer.send(data);
+            } catch (error) {
+                console.error("Failed to send to observer:", error);
+                // Remove failed observers
+                this.observers.delete(observer);
+            }
+        });
+    }
+
+    // RPC method to handle session closure
+    notifySessionClosed(): void {
+        console.log("Transcription session closed");
+        // Optionally close all observers or keep them open
+        // For now, we'll keep them open to allow reconnection
     }
 
 }
