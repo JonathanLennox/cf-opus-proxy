@@ -101,13 +101,13 @@ export class OutgoingConnection {
 
 			openaiWs.addEventListener('error', (error) => {
 				console.error(`OpenAI WebSocket error for tag ${this.tag}:`, error);
-				this.close();
+				this.doClose(true);
 				this.connectionStatus = 'failed';
 			});
 
 			openaiWs.addEventListener('close', () => {
 				console.log(`OpenAI WebSocket closed for tag: ${this.tag}`);
-				this.close();
+				this.doClose(true);
 				this.connectionStatus = 'failed';
 			});
 
@@ -263,15 +263,22 @@ export class OutgoingConnection {
 
 			// TODO: some use cases will want the audio transcription deltas also, and maybe other messages
 		} else if (parsedMessage.type === "error") {
-			this.close();
+			console.error(`OpenAI sent error message for ${this.tag}: ${parsedMessage}`);
+			this.doClose(true);
 		}
 	}
 
-	private close(): void {
+	close(): void {
+		this.doClose(false);
+	}
+
+	private doClose(notify: boolean): void {
 		this.opusDecoder?.free()
 		this.openaiWebSocket?.close()
 		this.decoderStatus = 'closed';
 		this.connectionStatus = 'closed';
-		this.onClosed?.(this.tag);
+		if (notify) {
+			this.onClosed?.(this.tag);
+		}
 	}
 }

@@ -41,8 +41,9 @@ export class TranscriberProxy {
         if (tag) {
             if (!this.outgoingConnections.has(tag)) {
                 while (this.outgoingConnections.size > this.MAX_OUTGOING_CONNECTIONS) {
-                    const firstKey = this.outgoingConnections.keys().next().value
-                    this.outgoingConnections.delete(firstKey!);
+                    const firstKey = this.outgoingConnections.keys().next().value!
+                    this.outgoingConnections.get(firstKey)?.close();
+                    this.outgoingConnections.delete(firstKey);
                 }
 
                 const connection = new OutgoingConnection(tag, env);
