@@ -14,20 +14,21 @@ declare global {
 const OPENAI_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
 
 export class OutgoingConnection {
-	transcriberProxy: TranscriberProxy;
-	tag: string;
-	connectionStatus: 'pending' | 'connected' | 'failed';
-    decoderStatus: 'pending' | 'ready' | 'failed';
- 	opusDecoder?: OpusDecoder<24000>;
-    openaiWebSocket?: WebSocket;
+	private tag: string;
+	private connectionStatus: 'pending' | 'connected' | 'failed' | 'closed';
+	private decoderStatus: 'pending' | 'ready' | 'failed' | 'closed';
+	private opusDecoder?: OpusDecoder<24000>;
+	private openaiWebSocket?: WebSocket;
 	private pendingOpusFrames: Uint8Array[] = [];
 	private pendingAudioData: string[] = [];
 
-	constructor(transcriberProxy: TranscriberProxy, tag: string, env: any) {
-		this.transcriberProxy = transcriberProxy;
+	onCompleteTranscription?: ((message: string) => void) = undefined
+	onClosed?: ((tag: string) => void) = undefined
+
+	constructor(tag: string, env: any) {
 		this.tag = tag;
 		this.connectionStatus = 'pending';
-        this.decoderStatus = 'pending';
+		this.decoderStatus = 'pending';
 
 		this.initializeOpusDecoder();
 		this.initializeOpenAIWebSocket(env);
@@ -55,9 +56,9 @@ export class OutgoingConnection {
 		try {
 			const openaiWs = new WebSocket(OPENAI_WS_URL, [
 				'realtime',
-                `openai-insecure-api-key.${env.OPENAI_API_KEY}`,
+				`openai-insecure-api-key.${env.OPENAI_API_KEY}`,
 				'openai-beta.realtime-v1'
-                ]
+			]
 			);
 
 			console.log(`Opening OpenAI WebSocket to ${OPENAI_WS_URL} for tag: ${this.tag}`);
@@ -69,19 +70,19 @@ export class OutgoingConnection {
 				this.connectionStatus = 'connected';
 
 				const sessionConfig = {
-                    type: 'transcription_session.update',
-                    session: {
-                        input_audio_format: 'pcm16',
-                        input_audio_transcription: {
-                            model: 'gpt-4o-transcribe',
-                            language: 'en'
-                        },
-                        turn_detection: {
-                            type: 'server_vad',
-                            threshold: 0.5,
-                            prefix_padding_ms: 300,
-                            silence_duration_ms: 500
-                        }
+					type: 'transcription_session.update',
+					session: {
+						input_audio_format: 'pcm16',
+						input_audio_transcription: {
+							model: 'gpt-4o-transcribe',
+							language: 'en'
+						},
+						turn_detection: {
+							type: 'server_vad',
+							threshold: 0.5,
+							prefix_padding_ms: 300,
+							silence_duration_ms: 500
+						}
 					}
 				};
 
@@ -100,11 +101,13 @@ export class OutgoingConnection {
 
 			openaiWs.addEventListener('error', (error) => {
 				console.error(`OpenAI WebSocket error for tag ${this.tag}:`, error);
+				this.close();
 				this.connectionStatus = 'failed';
 			});
 
 			openaiWs.addEventListener('close', () => {
 				console.log(`OpenAI WebSocket closed for tag: ${this.tag}`);
+				this.close();
 				this.connectionStatus = 'failed';
 			});
 
@@ -143,7 +146,7 @@ export class OutgoingConnection {
 	// Polyfills for Uint8Array base64 methods if not available
 	static {
 		if (!Uint8Array.fromBase64) {
-			Uint8Array.fromBase64 = function(base64: string): Uint8Array {
+			Uint8Array.fromBase64 = function (base64: string): Uint8Array {
 				const binaryString = atob(base64);
 				const bytes = new Uint8Array(binaryString.length);
 				for (let i = 0; i < binaryString.length; i++) {
@@ -154,7 +157,7 @@ export class OutgoingConnection {
 		}
 
 		if (!Uint8Array.prototype.toBase64) {
-			Uint8Array.prototype.toBase64 = function(): string {
+			Uint8Array.prototype.toBase64 = function (): string {
 				let binaryString = '';
 				for (let i = 0; i < this.length; i++) {
 					binaryString += String.fromCharCode(this[i]);
@@ -188,7 +191,7 @@ export class OutgoingConnection {
 			} else {
 				console.log(`Not queueing audio data for tag: ${this.tag}: connection ${this.connectionStatus}`)
 			}
-			
+
 		} catch (error) {
 			console.error(`Error processing audio data for tag ${this.tag}:`, error);
 		}
@@ -251,20 +254,24 @@ export class OutgoingConnection {
 			parsedMessage = JSON.parse(data);
 		} catch (parseError) {
 			console.error(`Failed to parse OpenAI message as JSON for tag ${this.tag}:`, parseError);
-			parsedMessage = { raw: data, parseError: true };
+			// TODO: close this connection?
+			return;
 		}
-		let messageToSend: any = undefined;
 
 		if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
-			 messageToSend = {
-				tag: this.tag,
-				transcript: parsedMessage.transcript
-			}
-		}
-		// TODO: some use cases will want the audio transcription deltas also, and maybe other messages
+			this.onCompleteTranscription?.(JSON.stringify({ tag: this.tag, transcript: parsedMessage.transcript }));
 
-		if (messageToSend) {
-			this.transcriberProxy.emit("message", JSON.stringify(messageToSend))
+			// TODO: some use cases will want the audio transcription deltas also, and maybe other messages
+		} else if (parsedMessage.type === "error") {
+			this.close();
 		}
+	}
+
+	private close(): void {
+		this.opusDecoder?.free()
+		this.openaiWebSocket?.close()
+		this.decoderStatus = 'closed';
+		this.connectionStatus = 'closed';
+		this.onClosed?.(this.tag);
 	}
 }

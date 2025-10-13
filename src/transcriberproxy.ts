@@ -5,6 +5,11 @@ export class TranscriberProxy {
     private outgoingConnections: Map<string, OutgoingConnection>;
     private eventListeners: Map<string, Array<(...args: any[]) => void>>;
 
+    // Cloudflare workers allow a max of six concurrent outgoing connections.  Leave some room
+    // in case we need to do separate fetch() calls or the like.  The JVB should have at most
+    // three concurrent speakers.
+    private MAX_OUTGOING_CONNECTIONS = 4
+
     constructor(ws: WebSocket, env: Env) {
         this.ws = ws;
         this.outgoingConnections = new Map<string, OutgoingConnection>;
@@ -35,7 +40,20 @@ export class TranscriberProxy {
         const tag = parsedMessage.media?.tag;
         if (tag) {
             if (!this.outgoingConnections.has(tag)) {
-                const connection = new OutgoingConnection(this, tag, env);
+                while (this.outgoingConnections.size > this.MAX_OUTGOING_CONNECTIONS) {
+                    const firstKey = this.outgoingConnections.keys().next().value
+                    this.outgoingConnections.delete(firstKey!);
+                }
+
+                const connection = new OutgoingConnection(tag, env);
+
+                connection.onCompleteTranscription = (message) => {
+                    this.emit("message", message)
+                }
+                connection.onClosed = (tag) => {
+                    this.outgoingConnections.delete(tag)
+                }
+
                 this.outgoingConnections.set(tag, connection);
                 console.log(`Created outgoing connection entry for tag: ${tag}`);
             }
