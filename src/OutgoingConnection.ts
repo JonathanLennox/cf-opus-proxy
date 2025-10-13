@@ -29,7 +29,7 @@ export class OutgoingConnection {
 		this.connectionStatus = 'pending';
         this.decoderStatus = 'pending';
 
-		const decoderPromise = this.initializeOpusDecoder();
+		this.initializeOpusDecoder();
 		this.initializeOpenAIWebSocket(env);
 	}
 
@@ -173,9 +173,6 @@ export class OutgoingConnection {
 		try {
 			// Decode the Opus audio data
 			const decodedAudio = this.opusDecoder.decodeFrame(binaryData)
-
-			// console.log(`Decoded audio for tag: ${this.tag}`, decodedAudio);
-
 
 			// Base64 encode the decoded audio - need to convert Int16Array to Uint8Array correctly
 			const int16Data = decodedAudio.pcmData.buf.subarray(0, decodedAudio.samplesDecoded);
