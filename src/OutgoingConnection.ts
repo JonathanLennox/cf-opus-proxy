@@ -42,23 +42,45 @@ const OPENAI_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
 
 export class OutgoingConnection {
 	private tag: string;
-	private connectionStatus: 'pending' | 'connected' | 'failed' | 'closed';
-	private decoderStatus: 'pending' | 'ready' | 'failed' | 'closed';
+	private pendingTags: string[] = [];
+	private connectionStatus: 'pending' | 'connected' | 'failed' | 'closed' = 'pending';
+	private decoderStatus: 'pending' | 'ready' | 'failed' | 'closed' = 'pending';
 	private opusDecoder?: OpusDecoder<24000>;
 	private openaiWebSocket?: WebSocket;
 	private pendingOpusFrames: Uint8Array[] = [];
 	private pendingAudioData: string[] = [];
+
+	private _lastMediaTime: number = -1;
+	public get lastMediaTime() {
+		return this._lastMediaTime;
+	}
+
+	private lastTranscriptTime?: number = undefined
 
 	onCompleteTranscription?: ((message: string) => void) = undefined
 	onClosed?: ((tag: string) => void) = undefined
 
 	constructor(tag: string, env: any) {
 		this.tag = tag;
-		this.connectionStatus = 'pending';
-		this.decoderStatus = 'pending';
 
 		this.initializeOpusDecoder();
 		this.initializeOpenAIWebSocket(env);
+	}
+
+	reset(newTag: string) {
+		if (this.connectionStatus == 'connected') {
+			this.pendingTags.push(newTag);
+			const clearMessage = { type: "input_audio_buffer.clear" };
+			this.openaiWebSocket?.send(JSON.stringify(clearMessage));
+		} else {
+			this.tag = newTag;
+		}
+		this.decoderStatus = 'pending';
+		this.opusDecoder?.reset().then(() => {
+			this.decoderStatus = 'ready';
+			console.log(`Opus decoder reset for tag: ${this.tag}`);
+			this.processPendingOpusFrames();
+		});
 	}
 
 	private async initializeOpusDecoder(): Promise<void> {
@@ -163,6 +185,8 @@ export class OutgoingConnection {
 		}
 
 		try {
+			this._lastMediaTime = Date.now();
+
 			// Base64 decode the media payload to binary
 			const opusFrame = Uint8Array.fromBase64(mediaEvent.media.payload);
 
@@ -270,15 +294,29 @@ export class OutgoingConnection {
 			// TODO: close this connection?
 			return;
 		}
-
 		if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
-			this.onCompleteTranscription?.(JSON.stringify({ tag: this.tag, transcript: parsedMessage.transcript }));
-
-			// TODO: some use cases will want the audio transcription deltas also, and maybe other messages
+			if (this.lastTranscriptTime !== undefined) {
+				this.lastTranscriptTime = Date.now();
+			}
+			// TODO: some use cases will want to receive the audio transcription deltas also
+		}
+		if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
+			let transcriptTime;
+			if (this.lastTranscriptTime !== undefined) {
+				transcriptTime = this.lastTranscriptTime
+				this.lastTranscriptTime	= undefined
+			} else {
+				transcriptTime = Date.now();
+			}
+			this.onCompleteTranscription?.(JSON.stringify({ tag: this.tag, time: transcriptTime, transcript: parsedMessage.transcript }));
+		} else if (parsedMessage.type === "input_audio_buffer.cleared") {
+			// Reset completed
+			this.tag = this.pendingTags.shift()!
 		} else if (parsedMessage.type === "error") {
 			console.error(`OpenAI sent error message for ${this.tag}: ${parsedMessage}`);
 			this.doClose(true);
 		}
+		// TODO: are there any other messages we care about?
 	}
 
 	close(): void {
