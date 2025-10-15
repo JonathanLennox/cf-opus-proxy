@@ -2,7 +2,8 @@ import { OpusDecoder } from './OpusDecoder/OpusDecoder';
 
 // Type definition augmentation for Uint8Array - Cloudflare Worker's JS has these methods but TypeScript doesn't have
 // declarations for them as of version 5.9.3.
-// These definitions are taken from https://github.com/microsoft/TypeScript/pull/61696
+// These definitions are taken from https://github.com/microsoft/TypeScript/pull/61696, which should be included
+// in TypeScript 6.0 and later.
 declare global {
 	interface Uint8ArrayConstructor {
 		/**
