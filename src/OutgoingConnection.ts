@@ -40,6 +40,10 @@ declare global {
 
 const OPENAI_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
 
+// The maximum number of bytes of audio OpenAI allows to be sent at a time.
+// OpenAI specifies this 15 MiB of base64-encoded audio, so divide by 3/4 to get the size in raw bytes.
+const MAX_AUDIO_BLOCK_BYTES = 15 * 1024 * 1024 * 3 / 4
+
 export class OutgoingConnection {
 	private _tag: string;
 	public get tag() {
@@ -51,7 +55,9 @@ export class OutgoingConnection {
 	private opusDecoder?: OpusDecoder<24000>;
 	private openaiWebSocket?: WebSocket;
 	private pendingOpusFrames: Uint8Array[] = [];
-	private pendingAudioData: string[] = [];
+	private pendingAudioDataBuffer = new ArrayBuffer(0, { maxByteLength: MAX_AUDIO_BLOCK_BYTES });
+	private pendingAudioData: Uint8Array = new Uint8Array(this.pendingAudioDataBuffer);
+	private pendingAudioFrames: string[] = [];
 
 	private _lastMediaTime: number = -1;
 	public get lastMediaTime() {
@@ -220,14 +226,24 @@ export class OutgoingConnection {
 			// Base64 encode the decoded audio - need to convert Int16Array to Uint8Array correctly
 			const int16Data = decodedAudio.pcmData.buf.subarray(0, decodedAudio.samplesDecoded);
 			const uint8Data = new Uint8Array(int16Data.buffer, int16Data.byteOffset, decodedAudio.samplesDecoded * 2);
-			const encodedAudio = uint8Data.toBase64();
 
 			if (this.connectionStatus === 'connected' && this.openaiWebSocket) {
+				const encodedAudio = uint8Data.toBase64();
 				this.sendAudioToOpenAI(encodedAudio);
 			} else if (this.connectionStatus === 'pending') {
-				// Queue the audio data for later sending
-				this.pendingAudioData.push(encodedAudio);
-				// console.log(`Queued audio data for tag: ${this.tag} (queue size: ${this.pendingAudioData.length})`);
+				// Add the pending audio data for later sending
+				// Keep it as a Uint8Array because you can't concatenate base64 (because of the padding)
+				if (this.pendingAudioData.length + uint8Data.length <= MAX_AUDIO_BLOCK_BYTES) {
+					this.pendingAudioDataBuffer.resize(this.pendingAudioData.length + uint8Data.length);
+					this.pendingAudioData.set(uint8Data, this.pendingAudioData.length)
+				}
+				else {
+					// Would exceed MAX_AUDIO_BLOCK_BYTES, break off a frame and base64-encode it.
+					const encodedData = this.pendingAudioData.toBase64()
+					this.pendingAudioFrames.push(encodedData)
+					this.pendingAudioDataBuffer.resize(uint8Data.length)
+					this.pendingAudioData.set(uint8Data);
+				}
 			} else {
 				console.log(`Not queueing audio data for tag: ${this._tag}: connection ${this.connectionStatus}`)
 			}
@@ -273,15 +289,20 @@ export class OutgoingConnection {
 	}
 
 	private processPendingAudioData(): void {
-		if (this.pendingAudioData.length === 0) {
+		if (this.pendingAudioFrames.length === 0 && this.pendingAudioData.length === 0) {
 			return;
 		}
 
-		console.log(`Processing ${this.pendingAudioData.length} queued audio data for tag: ${this._tag}`);
+		console.log(`Processing ${this.pendingAudioData.length} bytes plus ${this.pendingAudioFrames.length} frames of queued audio data for tag: ${this._tag}`);
 
 		// Process all queued audio data
-		const queuedAudio = [...this.pendingAudioData];
-		this.pendingAudioData = []; // Clear the queue
+		const queuedAudio = [...this.pendingAudioFrames];
+		this.pendingAudioFrames = []; // Clear the queue
+
+		if (this.pendingAudioData.length !== 0) {
+			queuedAudio.push(this.pendingAudioData.toBase64())
+		}
+		this.pendingAudioDataBuffer.resize(0);
 
 		for (const encodedAudio of queuedAudio) {
 			this.sendAudioToOpenAI(encodedAudio);
