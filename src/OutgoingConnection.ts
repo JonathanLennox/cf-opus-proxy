@@ -83,9 +83,8 @@ export class OutgoingConnection {
 		try {
 			const openaiWs = new WebSocket(OPENAI_WS_URL, [
 				'realtime',
-				`openai-insecure-api-key.${env.OPENAI_API_KEY}`,
-				'openai-beta.realtime-v1'
-			]
+				`openai-insecure-api-key.${env.OPENAI_API_KEY}`
+				]
 			);
 
 			console.log(`Opening OpenAI WebSocket to ${OPENAI_WS_URL} for tag: ${this.tag}`);
@@ -97,18 +96,29 @@ export class OutgoingConnection {
 				this.connectionStatus = 'connected';
 
 				const sessionConfig = {
-					type: 'transcription_session.update',
+					type: 'session.update',
 					session: {
-						input_audio_format: 'pcm16',
-						input_audio_transcription: {
-							model: 'gpt-4o-transcribe',
-							language: 'en'
-						},
-						turn_detection: {
-							type: 'server_vad',
-							threshold: 0.5,
-							prefix_padding_ms: 300,
-							silence_duration_ms: 500
+						type: "transcription",
+						audio: {
+							input: {
+								format: {
+									type: "audio/pcm",
+									rate: 24000
+								},
+								noise_reduction: {
+									type: "near_field"
+								},
+								transcription: {
+									model: 'gpt-4o-transcribe',
+									language: 'en' // TODO parameterize this
+								},
+								turn_detection: {
+									type: 'server_vad',
+									threshold: 0.5,
+									prefix_padding_ms: 300,
+									silence_duration_ms: 500
+								}
+							}
 						}
 					}
 				};
