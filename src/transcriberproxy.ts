@@ -9,10 +9,12 @@ export class TranscriberProxy extends EventEmitter {
     // in case we need to do separate fetch() calls or the like.  The JVB should have at most
     // three concurrent speakers.
     private MAX_OUTGOING_CONNECTIONS = 4
+    private env: Env;
 
     constructor(ws: WebSocket, env: Env) {
         super()
         this.ws = ws;
+        this.env = env;
         this.outgoingConnections = new Map<string, OutgoingConnection>;
 
         this.ws.addEventListener('close', () => {
@@ -30,38 +32,59 @@ export class TranscriberProxy extends EventEmitter {
             }
              // TODO: are there any other events that need to be handled?
              if (parsedMessage && parsedMessage.event === 'media') {
-                this.handleMediaEvent(parsedMessage, env);
+                this.handleMediaEvent(parsedMessage);
              }
         });
     }
 
-    handleMediaEvent(parsedMessage: any, env: any): void {
+    private oldestConnection(): OutgoingConnection | undefined {
+        let oldestConnection: OutgoingConnection | undefined = undefined
+        for (const conn of this.outgoingConnections.values()) {
+            if (oldestConnection === undefined ||
+                conn.lastMediaTime < oldestConnection.lastMediaTime ) {
+                    oldestConnection = conn;
+                }
+        }
+        return oldestConnection;
+    }
+
+    private getConnection(tag: string): OutgoingConnection {
+        const connection = this.outgoingConnections.get(tag);
+        if (connection !== undefined) {
+            return connection;
+        }
+
+        if (this.outgoingConnections.size < this.MAX_OUTGOING_CONNECTIONS) {
+            const newConnection = new OutgoingConnection(tag, this.env);
+
+            newConnection.onCompleteTranscription = (message) => {
+                this.emit("message", message)
+            }
+            newConnection.onClosed = (tag) => {
+                this.outgoingConnections.delete(tag)
+            }
+
+            this.outgoingConnections.set(tag, newConnection);
+            console.log(`Created outgoing connection entry for tag: ${tag}`);
+            return newConnection;
+        }
+
+        // Otherwise reset and reuse the least-recently-used connection to support the new tag
+        const connectionToReuse = this.oldestConnection()!;
+        const oldTag = connectionToReuse.tag;
+        this.outgoingConnections.delete(oldTag);
+        connectionToReuse.reset(tag);
+        this.outgoingConnections.set(tag, connectionToReuse);
+        console.log(`Reused outgoing connection entry for tag: ${tag}, previously for tag: ${oldTag}`);
+
+        return connectionToReuse;
+    }
+
+    handleMediaEvent(parsedMessage: any): void {
         const tag = parsedMessage.media?.tag;
         if (tag) {
-            if (!this.outgoingConnections.has(tag)) {
-                while (this.outgoingConnections.size > this.MAX_OUTGOING_CONNECTIONS) {
-                    const firstKey = this.outgoingConnections.keys().next().value!
-                    this.outgoingConnections.get(firstKey)?.close();
-                    this.outgoingConnections.delete(firstKey);
-                }
-
-                const connection = new OutgoingConnection(tag, env);
-
-                connection.onCompleteTranscription = (message) => {
-                    this.emit("message", message)
-                }
-                connection.onClosed = (tag) => {
-                    this.outgoingConnections.delete(tag)
-                }
-
-                this.outgoingConnections.set(tag, connection);
-                console.log(`Created outgoing connection entry for tag: ${tag}`);
-            }
-
-            const connection = this.outgoingConnections.get(tag);
-            if (connection) {
-                connection.handleMediaEvent(parsedMessage);
-            }
+            const connection = this.getConnection(tag);
+            connection.handleMediaEvent(parsedMessage);
         }
     }
 }
