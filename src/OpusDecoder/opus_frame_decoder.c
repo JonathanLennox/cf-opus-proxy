@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include "opus_frame_decoder.h"
-// Code adapted from wasm-audio-deocders https://eshaz.github.io/wasm-audio-decoders/
+// Code adapted from wasm-audio-decoders https://eshaz.github.io/wasm-audio-decoders/
 // "The source code that originates in this project is licensed under
 // the MIT license. Please note that any external source code included
 // by repository, such as the decoding libraries included as git
@@ -44,6 +44,13 @@ int opus_frame_decode(OpusDecoder *decoder, const unsigned char *in, opus_int32 
     );
     
     return samples_decoded;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void opus_frame_decoder_reset(OpusDecoder *decoder) {
+    if (decoder) {
+      opus_decoder_ctl(decoder, OPUS_RESET_STATE);
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE

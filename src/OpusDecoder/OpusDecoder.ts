@@ -38,6 +38,7 @@ export interface OpusDecodedAudio<
 interface OpusWasmInstance {
   opus_frame_decoder_create: (sampleRate: number, channels: number) => number;
   opus_frame_decoder_destroy: (decoder: number) => void;
+  opus_frame_decoder_reset: (decoder: number) => void;
   opus_frame_decode: (decoder: number, inputPtr: number, inputLength: number, outputPtr: number) => number;
   malloc: (size: number) => number;
   free: (ptr: number) => void;
@@ -77,6 +78,7 @@ export class OpusDecoder<
           resolve({
               opus_frame_decoder_create: module._opus_frame_decoder_create,
               opus_frame_decoder_destroy: module._opus_frame_decoder_destroy,
+              opus_frame_decoder_reset: module._opus_frame_decoder_reset,
               opus_frame_decode: module._opus_frame_decode,
               malloc: module._malloc,
               free: module._free,
@@ -159,9 +161,8 @@ export class OpusDecoder<
     }
   }
 
-  async reset(): Promise<void> {
-    this.free();
-    return this._init();
+  reset() {
+    this.wasm.opus_frame_decoder_reset(this._decoder);
   }
 
   allocateTypedArray<T extends Uint8Array | Int16Array>(

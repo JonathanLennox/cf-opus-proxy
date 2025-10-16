@@ -65,6 +65,7 @@ define OPUS_DECODER_EMCC_OPTS
 -s INITIAL_MEMORY=28MB \
 -s EXPORTED_FUNCTIONS="[ \
     '_free', '_malloc' \
+  , '_opus_frame_decoder_reset' \
   , '_opus_frame_decoder_destroy' \
   , '_opus_frame_decode' \
   , '_opus_frame_decoder_create' \

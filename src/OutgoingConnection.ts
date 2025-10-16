@@ -84,12 +84,9 @@ export class OutgoingConnection {
 		} else {
 			this._tag = newTag;
 		}
-		this.decoderStatus = 'pending';
-		this.opusDecoder?.reset().then(() => {
-			this.decoderStatus = 'ready';
-			console.log(`Opus decoder reset for tag: ${this._tag}`);
-			this.processPendingOpusFrames();
-		});
+		if (this.decoderStatus === 'ready') {
+			this.opusDecoder?.reset();
+		}
 	}
 
 	private async initializeOpusDecoder(): Promise<void> {
