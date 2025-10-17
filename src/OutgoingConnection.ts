@@ -42,7 +42,19 @@ const OPENAI_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
 
 // The maximum number of bytes of audio OpenAI allows to be sent at a time.
 // OpenAI specifies this 15 MiB of base64-encoded audio, so divide by 3/4 to get the size in raw bytes.
+// It's unlikely we'll hit this limit (it's ~4 minutes of audio at 24000 Hz) but better safe than sorry
 const MAX_AUDIO_BLOCK_BYTES = 15 * 1024 * 1024 * 3 / 4
+
+// Safely create a base64 representation of a Uint8Array.  There's a bug in current versions of the v8 engine that
+// toBase64 doesn't work on an array backed by a resizable buffer.
+// TODO: test whether this bug is present, and fast-path this function if not.
+function safeToBase64(array: Uint8Array): string {
+	if (!(array.buffer instanceof ArrayBuffer) || !array.buffer.resizable) {
+		return array.toBase64();
+	}
+	const tmpArray = new Uint8Array(array);
+	return tmpArray.toBase64();
+}
 
 export class OutgoingConnection {
 	private _tag: string;
@@ -87,6 +99,9 @@ export class OutgoingConnection {
 		if (this.decoderStatus === 'ready') {
 			this.opusDecoder?.reset();
 		}
+		// Reset the pending audio buffer
+		this.pendingAudioFrames = [];
+		this.pendingAudioDataBuffer.resize(0);
 	}
 
 	private async initializeOpusDecoder(): Promise<void> {
@@ -220,9 +235,7 @@ export class OutgoingConnection {
 			// Decode the Opus audio data
 			const decodedAudio = this.opusDecoder.decodeFrame(binaryData)
 
-			// Base64 encode the decoded audio - need to convert Int16Array to Uint8Array correctly
-			const int16Data = decodedAudio.pcmData.buf.subarray(0, decodedAudio.samplesDecoded);
-			const uint8Data = new Uint8Array(int16Data.buffer, int16Data.byteOffset, decodedAudio.samplesDecoded * 2);
+			const uint8Data = new Uint8Array(decodedAudio.pcmData.buffer, decodedAudio.pcmData.byteOffset, decodedAudio.pcmData.byteLength);
 
 			if (this.connectionStatus === 'connected' && this.openaiWebSocket) {
 				const encodedAudio = uint8Data.toBase64();
@@ -231,14 +244,15 @@ export class OutgoingConnection {
 				// Add the pending audio data for later sending
 				// Keep it as a Uint8Array because you can't concatenate base64 (because of the padding)
 				if (this.pendingAudioData.length + uint8Data.length <= MAX_AUDIO_BLOCK_BYTES) {
-					this.pendingAudioDataBuffer.resize(this.pendingAudioData.length + uint8Data.length);
-					this.pendingAudioData.set(uint8Data, this.pendingAudioData.length)
+					const oldLength = this.pendingAudioData.length;
+					this.pendingAudioDataBuffer.resize(this.pendingAudioData.byteLength + uint8Data.byteLength);
+					this.pendingAudioData.set(uint8Data, oldLength)
 				}
 				else {
 					// Would exceed MAX_AUDIO_BLOCK_BYTES, break off a frame and base64-encode it.
-					const encodedData = this.pendingAudioData.toBase64()
-					this.pendingAudioFrames.push(encodedData)
-					this.pendingAudioDataBuffer.resize(uint8Data.length)
+					const encodedAudio = safeToBase64(this.pendingAudioData)
+					this.pendingAudioFrames.push(encodedAudio)
+					this.pendingAudioDataBuffer.resize(uint8Data.byteLength)
 					this.pendingAudioData.set(uint8Data);
 				}
 			} else {
@@ -297,7 +311,7 @@ export class OutgoingConnection {
 		this.pendingAudioFrames = []; // Clear the queue
 
 		if (this.pendingAudioData.length !== 0) {
-			queuedAudio.push(this.pendingAudioData.toBase64())
+			queuedAudio.push(safeToBase64(this.pendingAudioData));
 		}
 		this.pendingAudioDataBuffer.resize(0);
 
@@ -315,13 +329,12 @@ export class OutgoingConnection {
 			// TODO: close this connection?
 			return;
 		}
-		if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
+		if (parsedMessage.type === "conversation.item.input_audio_transcription.delta") {
 			if (this.lastTranscriptTime !== undefined) {
 				this.lastTranscriptTime = Date.now();
 			}
 			// TODO: some use cases will want to receive the audio transcription deltas also
-		}
-		if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
+		} else if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
 			let transcriptTime;
 			if (this.lastTranscriptTime !== undefined) {
 				transcriptTime = this.lastTranscriptTime

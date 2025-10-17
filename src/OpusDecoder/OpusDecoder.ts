@@ -28,7 +28,7 @@ export interface DecodeError {
 export interface OpusDecodedAudio<
   SampleRate extends OpusDecoderSampleRate = OpusDecoderDefaultSampleRate,
 > {
-  pcmData: TypedArrayAllocation<Int16Array>;
+  pcmData: Int16Array;
   samplesDecoded: number;
   sampleRate: SampleRate;
   errors: DecodeError[];
@@ -188,7 +188,6 @@ export class OpusDecoder<
     this._pointers.clear();
 
     this.wasm.opus_frame_decoder_destroy(this._decoder);
-    this.wasm.free(this._decoder);
   }
 
   addError(
@@ -245,9 +244,11 @@ export class OpusDecoder<
     this._inputBytes += opusFrame.length;
     this._outputSamples += samplesDecoded;
 
+    const outputBuf = new Int16Array(this._output.buf.subarray(0, samplesDecoded * this._channels))
+
     return {
       errors,
-      pcmData: this._output,
+      pcmData: outputBuf,
       channels: this._channels,
       samplesDecoded,
       sampleRate: this._sampleRate,
