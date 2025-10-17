@@ -39,7 +39,7 @@ interface OpusWasmInstance {
   opus_frame_decoder_create: (sampleRate: number, channels: number) => number;
   opus_frame_decoder_destroy: (decoder: number) => void;
   opus_frame_decoder_reset: (decoder: number) => void;
-  opus_frame_decode: (decoder: number, inputPtr: number, inputLength: number, outputPtr: number) => number;
+  opus_frame_decode: (decoder: number, inputPtr: number, inputLength: number, outputPtr: number, frameSize: number, enableFec: number) => number;
   malloc: (size: number) => number;
   free: (ptr: number) => void;
   HEAP: ArrayBuffer;
@@ -220,7 +220,9 @@ export class OpusDecoder<
       this._decoder,
       this._input.ptr,
       opusFrame.length,
-      this._output.ptr
+      this._output.ptr,
+      this._outputChannelSize,
+      0
     );
 
     if (samplesDecoded < 0) {
