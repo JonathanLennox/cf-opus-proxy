@@ -2,7 +2,8 @@
 	"name": "cf-opus-proxy",
 	"version": "0.0.0",
 	"private": true,
-	"scripts": {
+        "license": "Apache-2.0",
+        "scripts": {
 		"format": "prettier --write '**/*.{js,ts,css,json,md}'",
 		"configure": "make configure -j$(node -e 'console.log(require(\"os\").cpus().length)')",
 		"build": "make -j$(node -e 'console.log(require(\"os\").cpus().length)') && tsc",
