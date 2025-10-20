@@ -76,6 +76,10 @@ export class OutgoingConnection {
 		return this._lastMediaTime;
 	}
 
+	private lastChunkNo: number = -1;
+	private lastTimestamp: number = -1;
+	private lastOpusFrameSize: number = -1;
+
 	private lastTranscriptTime?: number = undefined
 
 	onCompleteTranscription?: ((message: string) => void) = undefined
@@ -205,27 +209,70 @@ export class OutgoingConnection {
 			return;
 		}
 
+		this._lastMediaTime = Date.now();
+
+		let opusFrame: Uint8Array;
+
 		try {
-			this._lastMediaTime = Date.now();
-
 			// Base64 decode the media payload to binary
-			const opusFrame = Uint8Array.fromBase64(mediaEvent.media.payload);
-
-			if (this.decoderStatus === 'ready' && this.opusDecoder) {
-				this.processOpusFrame(opusFrame);
-			} else if (this.decoderStatus === 'pending') {
-				// Queue the binary data until decoder is ready
-				this.pendingOpusFrames.push(opusFrame);
-				// console.log(`Queued opus frame for tag: ${this.tag} (queue size: ${this.pendingOpusFrames.length})`);
-			} else {
-				console.log(`Not queueing opus frame for tag: ${this._tag}: decoder ${this.decoderStatus}`)
-			}
+			opusFrame = Uint8Array.fromBase64(mediaEvent.media.payload);
 		} catch (error) {
 			console.error(`Failed to decode base64 media payload for tag ${this._tag}:`, error);
+			return;
+		}
+
+		if (Number.isInteger(mediaEvent.media?.chunk) && Number.isInteger(mediaEvent.media.timestamp)) {
+			if (this.lastChunkNo != -1 && mediaEvent.media.chunk != this.lastChunkNo - 1) {
+				const chunkDelta = mediaEvent.media.chunk - this.lastChunkNo;
+				const timestampDelta = mediaEvent.media.timestamp - this.lastTimestamp;
+				if (chunkDelta <= 0 || timestampDelta <= 0) {
+					// Packets reordered, drop this packet
+					return
+				}
+
+				// Packets lost, do concealment
+				if (this.decoderStatus == 'ready') {
+					// TODO: enqueue concealment actions?  Not sure this is needed in practice.
+					this.doConcealment(opusFrame, chunkDelta, timestampDelta);
+				}
+			}
+			this.lastChunkNo = mediaEvent.media.chunk;
+			this.lastTimestamp = mediaEvent.media.timestamp;
+		}
+
+		if (this.decoderStatus === 'ready' && this.opusDecoder) {
+			this.processOpusFrame(opusFrame);
+		} else if (this.decoderStatus === 'pending') {
+			// Queue the binary data until decoder is ready
+			this.pendingOpusFrames.push(opusFrame);
+			// console.log(`Queued opus frame for tag: ${this.tag} (queue size: ${this.pendingOpusFrames.length})`);
+		} else {
+			console.log(`Not queueing opus frame for tag: ${this._tag}: decoder ${this.decoderStatus}`)
 		}
 	}
 
-	private processOpusFrame(binaryData: Uint8Array): void {
+	private doConcealment(opusFrame: Uint8Array, chunkDelta: number, timestampDelta: number) {
+		if (!this.opusDecoder) {
+			console.error(`No opus decoder available for tag: ${this._tag}`);
+			return;
+		}
+
+		/* Make sure numbers make sense */
+		const chunkDeltaInSamples = chunkDelta * this.lastOpusFrameSize;
+		const timestampDeltaInSamples = timestampDelta / 48000 * 24000;
+		const maxConcealment = 120 * 24; /* 120 ms at 24 kHz */
+
+		const samplesToConceal = Math.min(chunkDeltaInSamples, timestampDeltaInSamples, maxConcealment);
+
+		try {
+			const concealedAudio = this.opusDecoder.conceal(opusFrame, samplesToConceal);
+			this.sendOrEnqueueDecodedAudio(concealedAudio.pcmData);
+		} catch (error) {
+			console.error(`Error concealing ${samplesToConceal} samples for tag ${this._tag}:`, error);
+		}
+	}
+
+	private processOpusFrame(opusFrame: Uint8Array): void {
 		if (!this.opusDecoder) {
 			console.error(`No opus decoder available for tag: ${this._tag}`);
 			return;
@@ -233,34 +280,38 @@ export class OutgoingConnection {
 
 		try {
 			// Decode the Opus audio data
-			const decodedAudio = this.opusDecoder.decodeFrame(binaryData)
-
-			const uint8Data = new Uint8Array(decodedAudio.pcmData.buffer, decodedAudio.pcmData.byteOffset, decodedAudio.pcmData.byteLength);
-
-			if (this.connectionStatus === 'connected' && this.openaiWebSocket) {
-				const encodedAudio = uint8Data.toBase64();
-				this.sendAudioToOpenAI(encodedAudio);
-			} else if (this.connectionStatus === 'pending') {
-				// Add the pending audio data for later sending
-				// Keep it as a Uint8Array because you can't concatenate base64 (because of the padding)
-				if (this.pendingAudioData.length + uint8Data.length <= MAX_AUDIO_BLOCK_BYTES) {
-					const oldLength = this.pendingAudioData.length;
-					this.pendingAudioDataBuffer.resize(this.pendingAudioData.byteLength + uint8Data.byteLength);
-					this.pendingAudioData.set(uint8Data, oldLength)
-				}
-				else {
-					// Would exceed MAX_AUDIO_BLOCK_BYTES, break off a frame and base64-encode it.
-					const encodedAudio = safeToBase64(this.pendingAudioData)
-					this.pendingAudioFrames.push(encodedAudio)
-					this.pendingAudioDataBuffer.resize(uint8Data.byteLength)
-					this.pendingAudioData.set(uint8Data);
-				}
-			} else {
-				console.log(`Not queueing audio data for tag: ${this._tag}: connection ${this.connectionStatus}`)
-			}
+			const decodedAudio = this.opusDecoder.decodeFrame(opusFrame)
+			this.lastOpusFrameSize = decodedAudio.samplesDecoded;
+			this.sendOrEnqueueDecodedAudio(decodedAudio.pcmData);
 
 		} catch (error) {
 			console.error(`Error processing audio data for tag ${this._tag}:`, error);
+		}
+	}
+
+	private sendOrEnqueueDecodedAudio(pcmData: Int16Array) {
+		const uint8Data = new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength);
+
+		if (this.connectionStatus === 'connected' && this.openaiWebSocket) {
+			const encodedAudio = uint8Data.toBase64();
+			this.sendAudioToOpenAI(encodedAudio);
+		} else if (this.connectionStatus === 'pending') {
+			// Add the pending audio data for later sending
+			// Keep it as a Uint8Array because you can't concatenate base64 (because of the padding)
+			if (this.pendingAudioData.length + uint8Data.length <= MAX_AUDIO_BLOCK_BYTES) {
+				const oldLength = this.pendingAudioData.length;
+				this.pendingAudioDataBuffer.resize(this.pendingAudioData.byteLength + uint8Data.byteLength);
+				this.pendingAudioData.set(uint8Data, oldLength)
+			}
+			else {
+				// Would exceed MAX_AUDIO_BLOCK_BYTES, break off a frame and base64-encode it.
+				const encodedAudio = safeToBase64(this.pendingAudioData)
+				this.pendingAudioFrames.push(encodedAudio)
+				this.pendingAudioDataBuffer.resize(uint8Data.byteLength)
+				this.pendingAudioData.set(uint8Data);
+			}
+		} else {
+			console.log(`Not queueing audio data for tag: ${this._tag}: connection ${this.connectionStatus}`)
 		}
 	}
 

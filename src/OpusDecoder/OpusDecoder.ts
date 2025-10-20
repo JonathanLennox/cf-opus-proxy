@@ -258,4 +258,76 @@ export class OpusDecoder<
       SampleRate extends undefined ? OpusDecoderDefaultSampleRate : SampleRate
     >;
   }
+
+ conceal(
+      opusFrame: Uint8Array | undefined,
+      samplesToConceal: number
+    ) : OpusDecodedAudio<
+    SampleRate extends undefined ? OpusDecoderDefaultSampleRate : SampleRate
+  > {
+    if (samplesToConceal > this._outputChannelSize) {
+      samplesToConceal = this._outputChannelSize;
+    }
+    const errors: DecodeError[] = [];
+    let samplesDecoded: number;
+    let inLength: number;
+    if (opusFrame !== undefined) {
+      // FEC decode
+      this._input.buf.set(opusFrame);
+      inLength = opusFrame.length;
+      samplesDecoded = this.wasm.opus_frame_decode(
+        this._decoder,
+        this._input.ptr,
+        opusFrame.length,
+        this._output.ptr,
+        samplesToConceal,
+        1
+      );
+    }
+    else {
+      // PLC decode
+      inLength = 0;
+      samplesDecoded = this.wasm.opus_frame_decode(
+        this._decoder,
+        0,
+        0,
+        this._output.ptr,
+        samplesToConceal,
+        0
+      );
+    }
+
+    if (samplesDecoded < 0) {
+      const error = `libopus ${samplesDecoded} ${OpusDecoder.errors.get(samplesDecoded) || "Unknown Error" }`;
+
+      console.error(error);
+
+      this.addError(
+        errors,
+        error,
+        inLength,
+        this._frameNumber,
+        this._inputBytes,
+        this._outputSamples
+      );
+
+      samplesDecoded = 0;
+    }
+
+    this._frameNumber++;
+    this._inputBytes += inLength;
+    this._outputSamples += samplesDecoded;
+
+    const outputBuf = new Int16Array(this._output.buf.subarray(0, samplesDecoded * this._channels))
+
+    return {
+      errors,
+      pcmData: outputBuf,
+      channels: this._channels,
+      samplesDecoded,
+      sampleRate: this._sampleRate,
+    } as OpusDecodedAudio<
+      SampleRate extends undefined ? OpusDecoderDefaultSampleRate : SampleRate
+    >;
+  }
 }
