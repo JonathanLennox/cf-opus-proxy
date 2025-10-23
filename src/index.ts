@@ -13,14 +13,10 @@ export default {
             return new Response("Worker expected GET method", { status: 400 });
         }
 
-        const { url, sessionId, transcribe } = extractSessionParameters(request.url);
+        const { url, sessionId, transcribe, connect } = extractSessionParameters(request.url);
 
         if (!url.pathname.endsWith("/events") && !url.pathname.endsWith("/transcribe")) {
             return new Response("Bad URL", { status: 400 });
-        }
-
-        if (!sessionId) {
-            return new Response("Missing sessionId", { status: 400 });
         }
 
         if (transcribe) {
@@ -29,19 +25,47 @@ export default {
 
             server.accept();
 
-            // Handle transcription: run the proxy in this worker
-            const stub = env.TRANSCRIPTIONATOR.getByName(sessionId);
             const session = new TranscriberProxy(server, env);
 
-            session.on("closed", () => {
-                // Notify the Durable Object that the session closed
-                stub.notifySessionClosed();
-            });
+            if (connect) {
+                try {
+                    const outbound = new WebSocket(connect, ['transcription']);
+                    // TODO: pass auth info to this websocket
+                    session.on("closed", () => {
+                        outbound.close();
+                        server.close();
+                    });
+                    session.on("message", (data: any) => {
+                        outbound.send(data);
+                    })
 
-            session.on("message", (data: any) => {
-                // Forward transcription messages to the Durable Object for distribution via RPC
-                stub.broadcastMessage(data);
-            });
+                    outbound.addEventListener("close", () => {
+                        // TODO: reconnect?
+                    });
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    return new Response(`Failed to connect to WebSocket: ${message}`, { status: 400 })
+                }
+            }
+            else {
+                if (!sessionId) {
+                    return new Response("Missing sessionId or connect param", { status: 400 });
+                }
+
+                // Connect to transcriptionator durable object to relay messages
+                const stub = env.TRANSCRIPTIONATOR.getByName(sessionId);
+
+                session.on("closed", () => {
+                    // Notify the Durable Object that the session closed
+                    stub.notifySessionClosed();
+                    server.close();
+                });
+
+                session.on("message", (data: any) => {
+                    // Forward transcription messages to the Durable Object for distribution via RPC
+                    stub.broadcastMessage(data);
+                });
+            }
 
             // Accept the connection and return immediately
             return new Response(null, {
@@ -49,6 +73,10 @@ export default {
                 webSocket: client,
             });
         } else {
+            if (!sessionId) {
+                return new Response("Missing sessionId or connect param", { status: 400 });
+            }
+
             // Handle observer: connect to the Durable Object
             const stub = env.TRANSCRIPTIONATOR.getByName(sessionId);
             return stub.fetch(request);
