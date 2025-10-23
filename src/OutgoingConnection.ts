@@ -17,8 +17,8 @@ declare global {
 		fromBase64(
 			string: string,
 			options?: {
-				alphabet?: "base64" | "base64url" | undefined;
-				lastChunkHandling?: "loose" | "strict" | "stop-before-partial" | undefined;
+				alphabet?: 'base64' | 'base64url' | undefined;
+				lastChunkHandling?: 'loose' | 'strict' | 'stop-before-partial' | undefined;
 			},
 		): Uint8Array<ArrayBuffer>;
 	}
@@ -29,12 +29,7 @@ declare global {
 		 * @param options If provided, sets the alphabet and padding behavior used.
 		 * @returns A base64-encoded string.
 		 */
-		toBase64(
-			options?: {
-				alphabet?: "base64" | "base64url" | undefined;
-				omitPadding?: boolean | undefined;
-			},
-		): string;
+		toBase64(options?: { alphabet?: 'base64' | 'base64url' | undefined; omitPadding?: boolean | undefined }): string;
 	}
 }
 
@@ -43,7 +38,7 @@ const OPENAI_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
 // The maximum number of bytes of audio OpenAI allows to be sent at a time.
 // OpenAI specifies this 15 MiB of base64-encoded audio, so divide by 3/4 to get the size in raw bytes.
 // It's unlikely we'll hit this limit (it's ~4 minutes of audio at 24000 Hz) but better safe than sorry
-const MAX_AUDIO_BLOCK_BYTES = 15 * 1024 * 1024 * 3 / 4
+const MAX_AUDIO_BLOCK_BYTES = (15 * 1024 * 1024 * 3) / 4;
 
 // Safely create a base64 representation of a Uint8Array.  There's a bug in current versions of the v8 engine that
 // toBase64 doesn't work on an array backed by a resizable buffer.
@@ -59,7 +54,7 @@ function safeToBase64(array: Uint8Array): string {
 export class OutgoingConnection {
 	private _tag: string;
 	public get tag() {
-		return this._tag
+		return this._tag;
 	}
 	private pendingTags: string[] = [];
 	private connectionStatus: 'pending' | 'connected' | 'failed' | 'closed' = 'pending';
@@ -80,10 +75,10 @@ export class OutgoingConnection {
 	private lastTimestamp: number = -1;
 	private lastOpusFrameSize: number = -1;
 
-	private lastTranscriptTime?: number = undefined
+	private lastTranscriptTime?: number = undefined;
 
-	onCompleteTranscription?: ((message: string) => void) = undefined
-	onClosed?: ((tag: string) => void) = undefined
+	onCompleteTranscription?: (message: string) => void = undefined;
+	onClosed?: (tag: string) => void = undefined;
 
 	constructor(tag: string, env: Env) {
 		this._tag = tag;
@@ -95,7 +90,7 @@ export class OutgoingConnection {
 	reset(newTag: string) {
 		if (this.connectionStatus == 'connected') {
 			this.pendingTags.push(newTag);
-			const clearMessage = { type: "input_audio_buffer.clear" };
+			const clearMessage = { type: 'input_audio_buffer.clear' };
 			this.openaiWebSocket?.send(JSON.stringify(clearMessage));
 		} else {
 			this._tag = newTag;
@@ -113,7 +108,7 @@ export class OutgoingConnection {
 			console.log(`Creating Opus decoder for tag: ${this._tag}`);
 			this.opusDecoder = new OpusDecoder({
 				sampleRate: 24000,
-				channels: 1
+				channels: 1,
 			});
 
 			await this.opusDecoder.ready;
@@ -128,11 +123,7 @@ export class OutgoingConnection {
 
 	private initializeOpenAIWebSocket(env: Env): void {
 		try {
-			const openaiWs = new WebSocket(OPENAI_WS_URL, [
-				'realtime',
-				`openai-insecure-api-key.${env.OPENAI_API_KEY}`
-				]
-			);
+			const openaiWs = new WebSocket(OPENAI_WS_URL, ['realtime', `openai-insecure-api-key.${env.OPENAI_API_KEY}`]);
 
 			console.log(`Opening OpenAI WebSocket to ${OPENAI_WS_URL} for tag: ${this._tag}`);
 
@@ -145,33 +136,33 @@ export class OutgoingConnection {
 				const sessionConfig = {
 					type: 'session.update',
 					session: {
-						type: "transcription",
+						type: 'transcription',
 						audio: {
 							input: {
 								format: {
-									type: "audio/pcm",
-									rate: 24000
+									type: 'audio/pcm',
+									rate: 24000,
 								},
 								noise_reduction: {
-									type: "near_field"
+									type: 'near_field',
 								},
 								transcription: {
 									model: 'gpt-4o-transcribe',
-									language: 'en' // TODO parameterize this
+									language: 'en', // TODO parameterize this
 								},
 								turn_detection: {
 									type: 'server_vad',
 									threshold: 0.5,
 									prefix_padding_ms: 300,
-									silence_duration_ms: 500
-								}
-							}
-						}
-					}
+									silence_duration_ms: 500,
+								},
+							},
+						},
+					},
 				};
 
 				const configMessage = JSON.stringify(sessionConfig);
-				console.log(`Initializing OpenAI config with message: ${configMessage}`)
+				console.log(`Initializing OpenAI config with message: ${configMessage}`);
 
 				openaiWs.send(configMessage);
 
@@ -194,7 +185,6 @@ export class OutgoingConnection {
 				this.doClose(true);
 				this.connectionStatus = 'failed';
 			});
-
 		} catch (error) {
 			console.error(`Failed to create OpenAI WebSocket connection for tag ${this._tag}:`, error);
 			this.connectionStatus = 'failed';
@@ -227,7 +217,7 @@ export class OutgoingConnection {
 				const timestampDelta = mediaEvent.media.timestamp - this.lastTimestamp;
 				if (chunkDelta <= 0 || timestampDelta <= 0) {
 					// Packets reordered, drop this packet
-					return
+					return;
 				}
 
 				// Packets lost, do concealment
@@ -247,7 +237,7 @@ export class OutgoingConnection {
 			this.pendingOpusFrames.push(opusFrame);
 			// console.log(`Queued opus frame for tag: ${this.tag} (queue size: ${this.pendingOpusFrames.length})`);
 		} else {
-			console.log(`Not queueing opus frame for tag: ${this._tag}: decoder ${this.decoderStatus}`)
+			console.log(`Not queueing opus frame for tag: ${this._tag}: decoder ${this.decoderStatus}`);
 		}
 	}
 
@@ -259,7 +249,7 @@ export class OutgoingConnection {
 
 		/* Make sure numbers make sense */
 		const chunkDeltaInSamples = chunkDelta * this.lastOpusFrameSize;
-		const timestampDeltaInSamples = timestampDelta / 48000 * 24000;
+		const timestampDeltaInSamples = (timestampDelta / 48000) * 24000;
 		const maxConcealment = 120 * 24; /* 120 ms at 24 kHz */
 
 		const samplesToConceal = Math.min(chunkDeltaInSamples, timestampDeltaInSamples, maxConcealment);
@@ -280,10 +270,9 @@ export class OutgoingConnection {
 
 		try {
 			// Decode the Opus audio data
-			const decodedAudio = this.opusDecoder.decodeFrame(opusFrame)
+			const decodedAudio = this.opusDecoder.decodeFrame(opusFrame);
 			this.lastOpusFrameSize = decodedAudio.samplesDecoded;
 			this.sendOrEnqueueDecodedAudio(decodedAudio.pcmData);
-
 		} catch (error) {
 			console.error(`Error processing audio data for tag ${this._tag}:`, error);
 		}
@@ -301,17 +290,16 @@ export class OutgoingConnection {
 			if (this.pendingAudioData.length + uint8Data.length <= MAX_AUDIO_BLOCK_BYTES) {
 				const oldLength = this.pendingAudioData.length;
 				this.pendingAudioDataBuffer.resize(this.pendingAudioData.byteLength + uint8Data.byteLength);
-				this.pendingAudioData.set(uint8Data, oldLength)
-			}
-			else {
+				this.pendingAudioData.set(uint8Data, oldLength);
+			} else {
 				// Would exceed MAX_AUDIO_BLOCK_BYTES, break off a frame and base64-encode it.
-				const encodedAudio = safeToBase64(this.pendingAudioData)
-				this.pendingAudioFrames.push(encodedAudio)
-				this.pendingAudioDataBuffer.resize(uint8Data.byteLength)
+				const encodedAudio = safeToBase64(this.pendingAudioData);
+				this.pendingAudioFrames.push(encodedAudio);
+				this.pendingAudioDataBuffer.resize(uint8Data.byteLength);
 				this.pendingAudioData.set(uint8Data);
 			}
 		} else {
-			console.log(`Not queueing audio data for tag: ${this._tag}: connection ${this.connectionStatus}`)
+			console.log(`Not queueing audio data for tag: ${this._tag}: connection ${this.connectionStatus}`);
 		}
 	}
 
@@ -355,7 +343,9 @@ export class OutgoingConnection {
 			return;
 		}
 
-		console.log(`Processing ${this.pendingAudioData.length} bytes plus ${this.pendingAudioFrames.length} frames of queued audio data for tag: ${this._tag}`);
+		console.log(
+			`Processing ${this.pendingAudioData.length} bytes plus ${this.pendingAudioFrames.length} frames of queued audio data for tag: ${this._tag}`,
+		);
 
 		// Process all queued audio data
 		const queuedAudio = [...this.pendingAudioFrames];
@@ -380,24 +370,24 @@ export class OutgoingConnection {
 			// TODO: close this connection?
 			return;
 		}
-		if (parsedMessage.type === "conversation.item.input_audio_transcription.delta") {
+		if (parsedMessage.type === 'conversation.item.input_audio_transcription.delta') {
 			if (this.lastTranscriptTime !== undefined) {
 				this.lastTranscriptTime = Date.now();
 			}
 			// TODO: some use cases will want to receive the audio transcription deltas also
-		} else if (parsedMessage.type === "conversation.item.input_audio_transcription.completed") {
+		} else if (parsedMessage.type === 'conversation.item.input_audio_transcription.completed') {
 			let transcriptTime;
 			if (this.lastTranscriptTime !== undefined) {
-				transcriptTime = this.lastTranscriptTime
-				this.lastTranscriptTime	= undefined
+				transcriptTime = this.lastTranscriptTime;
+				this.lastTranscriptTime = undefined;
 			} else {
 				transcriptTime = Date.now();
 			}
 			this.onCompleteTranscription?.(JSON.stringify({ tag: this._tag, time: transcriptTime, transcript: parsedMessage.transcript }));
-		} else if (parsedMessage.type === "input_audio_buffer.cleared") {
+		} else if (parsedMessage.type === 'input_audio_buffer.cleared') {
 			// Reset completed
-			this._tag = this.pendingTags.shift()!
-		} else if (parsedMessage.type === "error") {
+			this._tag = this.pendingTags.shift()!;
+		} else if (parsedMessage.type === 'error') {
 			console.error(`OpenAI sent error message for ${this._tag}: ${parsedMessage}`);
 			this.doClose(true);
 		}
@@ -409,8 +399,8 @@ export class OutgoingConnection {
 	}
 
 	private doClose(notify: boolean): void {
-		this.opusDecoder?.free()
-		this.openaiWebSocket?.close()
+		this.opusDecoder?.free();
+		this.openaiWebSocket?.close();
 		this.decoderStatus = 'closed';
 		this.connectionStatus = 'closed';
 		if (notify) {

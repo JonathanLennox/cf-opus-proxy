@@ -2,8 +2,8 @@
 	"name": "cf-opus-proxy",
 	"version": "0.0.0",
 	"private": true,
-        "license": "Apache-2.0",
-        "scripts": {
+	"license": "Apache-2.0",
+	"scripts": {
 		"format": "prettier --write '**/*.{js,ts,css,json,md}'",
 		"configure": "make configure -j$(node -e 'console.log(require(\"os\").cpus().length)')",
 		"build": "make -j$(node -e 'console.log(require(\"os\").cpus().length)') && tsc",
@@ -18,6 +18,7 @@
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
 		"@types/node": "^24.7.2",
+		"prettier": "3.6.2",
 		"typescript": "^5.9.3",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.38.0"
