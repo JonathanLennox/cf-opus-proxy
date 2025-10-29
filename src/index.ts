@@ -1,5 +1,6 @@
 import { extractSessionParameters } from './utils';
 import { TranscriberProxy } from './transcriberproxy';
+import { Transcriptionator } from './transcriptionator';
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
@@ -27,44 +28,39 @@ export default {
 
 			const session = new TranscriberProxy(server, env);
 
+            let outbound: WebSocket | undefined;
+            let stub: DurableObjectStub<Transcriptionator> | undefined;
+
 			if (connect) {
 				try {
 					const outbound = new WebSocket(connect, ['transcription']);
 					// TODO: pass auth info to this websocket
-					session.on('closed', () => {
-						outbound.close();
-						server.close();
-					});
-					session.on('message', (data: any) => {
-						outbound.send(data);
-					});
 
 					outbound.addEventListener('close', () => {
 						// TODO: reconnect?
 					});
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					return new Response(`Failed to connect to WebSocket: ${message}`, { status: 400 });
+					return new Response(`Failed to connect to WebSocket ${connect}: ${message}`, { status: 400 });
 				}
-			} else {
-				if (!sessionId) {
-					return new Response('Missing sessionId or connect param', { status: 400 });
-				}
-
-				// Connect to transcriptionator durable object to relay messages
-				const stub = env.TRANSCRIPTIONATOR.getByName(sessionId);
-
-				session.on('closed', () => {
-					// Notify the Durable Object that the session closed
-					stub.notifySessionClosed();
-					server.close();
-				});
-
-				session.on('message', (data: any) => {
-					// Forward transcription messages to the Durable Object for distribution via RPC
-					stub.broadcastMessage(data);
-				});
 			}
+
+            if (sessionId) {
+				// Connect to transcriptionator durable object to relay messages
+				stub = env.TRANSCRIPTIONATOR.getByName(sessionId);
+			}
+
+            session.on('closed', () => {
+                outbound?.close();
+                stub?.notifySessionClosed();
+                server.close();
+            });
+
+            session.on('message', (data: any) => {
+                outbound?.send(data);
+                stub?.broadcastMessage(data);
+                server.send(data);
+            });
 
 			// Accept the connection and return immediately
 			return new Response(null, {
