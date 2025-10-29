@@ -28,8 +28,8 @@ export default {
 
 			const session = new TranscriberProxy(server, env);
 
-            let outbound: WebSocket | undefined;
-            let stub: DurableObjectStub<Transcriptionator> | undefined;
+			let outbound: WebSocket | undefined;
+			let stub: DurableObjectStub<Transcriptionator> | undefined;
 
 			if (connect) {
 				try {
@@ -45,22 +45,22 @@ export default {
 				}
 			}
 
-            if (sessionId) {
+			if (sessionId) {
 				// Connect to transcriptionator durable object to relay messages
 				stub = env.TRANSCRIPTIONATOR.getByName(sessionId);
 			}
 
-            session.on('closed', () => {
-                outbound?.close();
-                stub?.notifySessionClosed();
-                server.close();
-            });
+			session.on('closed', () => {
+				outbound?.close();
+				stub?.notifySessionClosed();
+				server.close();
+			});
 
-            session.on('message', (data: any) => {
-                outbound?.send(data);
-                stub?.broadcastMessage(data);
-                server.send(data);
-            });
+			session.on('message', (data: any) => {
+				outbound?.send(data);
+				stub?.broadcastMessage(data);
+				server.send(data);
+			});
 
 			// Accept the connection and return immediately
 			return new Response(null, {
