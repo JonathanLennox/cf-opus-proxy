@@ -51,11 +51,23 @@ function safeToBase64(array: Uint8Array): string {
 	return tmpArray.toBase64();
 }
 
+const tagMatcher = /([0-a-f]+)-([0-9]+)/;
+
 export class OutgoingConnection {
-	private _tag: string;
+	private _tag!: string;
 	public get tag() {
 		return this._tag;
 	}
+	private setTag(newTag: string) {
+		this._tag = newTag;
+		const match = tagMatcher.exec(newTag);
+		if (match !== null && match.length == 2) {
+			this.participant = { id: match[0], ssrc: match[1] };
+		} else {
+			this.participant = { id: newTag };
+		}
+	}
+	private participant: any;
 	private pendingTags: string[] = [];
 	private connectionStatus: 'pending' | 'connected' | 'failed' | 'closed' = 'pending';
 	private decoderStatus: 'pending' | 'ready' | 'failed' | 'closed' = 'pending';
@@ -81,7 +93,7 @@ export class OutgoingConnection {
 	onClosed?: (tag: string) => void = undefined;
 
 	constructor(tag: string, env: Env) {
-		this._tag = tag;
+		this.setTag(tag);
 
 		this.initializeOpusDecoder();
 		this.initializeOpenAIWebSocket(env);
@@ -93,7 +105,7 @@ export class OutgoingConnection {
 			const clearMessage = { type: 'input_audio_buffer.clear' };
 			this.openaiWebSocket?.send(JSON.stringify(clearMessage));
 		} else {
-			this._tag = newTag;
+			this.setTag(newTag);
 		}
 		if (this.decoderStatus === 'ready') {
 			this.opusDecoder?.reset();
@@ -361,6 +373,18 @@ export class OutgoingConnection {
 		}
 	}
 
+	private getTranscriptionMessage(transcript: string, timestamp: number, isInterim: boolean): any {
+		const message = {
+			transcript: [{ text: transcript }],
+			is_interim: isInterim,
+			event: 'SPEECH',
+			type: 'transcription-result',
+			participant: this.participant,
+			timestamp,
+		};
+		return JSON.stringify(message);
+	}
+
 	private async handleOpenAIMessage(data: any): Promise<void> {
 		let parsedMessage;
 		try {
@@ -383,10 +407,11 @@ export class OutgoingConnection {
 			} else {
 				transcriptTime = Date.now();
 			}
-			this.onCompleteTranscription?.(JSON.stringify({ tag: this._tag, time: transcriptTime, transcript: parsedMessage.transcript }));
+			const transcription = this.getTranscriptionMessage(parsedMessage.transcribe, transcriptTime, false);
+			this.onCompleteTranscription?.(transcription);
 		} else if (parsedMessage.type === 'input_audio_buffer.cleared') {
 			// Reset completed
-			this._tag = this.pendingTags.shift()!;
+			this.setTag(this.pendingTags.shift()!);
 		} else if (parsedMessage.type === 'error') {
 			console.error(`OpenAI sent error message for ${this._tag}: ${parsedMessage}`);
 			this.doClose(true);
