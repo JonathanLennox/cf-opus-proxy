@@ -407,7 +407,7 @@ export class OutgoingConnection {
 			} else {
 				transcriptTime = Date.now();
 			}
-			const transcription = this.getTranscriptionMessage(parsedMessage.transcribe, transcriptTime, false);
+			const transcription = this.getTranscriptionMessage(parsedMessage.transcript, transcriptTime, false);
 			this.onCompleteTranscription?.(transcription);
 		} else if (parsedMessage.type === 'input_audio_buffer.cleared') {
 			// Reset completed
