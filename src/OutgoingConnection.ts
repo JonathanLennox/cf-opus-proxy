@@ -51,7 +51,7 @@ function safeToBase64(array: Uint8Array): string {
 	return tmpArray.toBase64();
 }
 
-const tagMatcher = /([0-a-f]+)-([0-9]+)/;
+const tagMatcher = /^([0-9a-fA-F]+)-([0-9]+)$/;
 
 export class OutgoingConnection {
 	private _tag!: string;
@@ -61,8 +61,8 @@ export class OutgoingConnection {
 	private setTag(newTag: string) {
 		this._tag = newTag;
 		const match = tagMatcher.exec(newTag);
-		if (match !== null && match.length == 2) {
-			this.participant = { id: match[0], ssrc: match[1] };
+		if (match !== null && match.length === 3) {
+			this.participant = { id: match[1], ssrc: match[2] };
 		} else {
 			this.participant = { id: newTag };
 		}
