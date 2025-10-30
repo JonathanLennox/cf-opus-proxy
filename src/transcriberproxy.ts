@@ -56,8 +56,11 @@ export class TranscriberProxy extends EventEmitter {
 		if (this.outgoingConnections.size < this.MAX_OUTGOING_CONNECTIONS) {
 			const newConnection = new OutgoingConnection(tag, this.env);
 
+			newConnection.onInterimTranscription = (message) => {
+				this.emit('interim_transcription', message);
+			};
 			newConnection.onCompleteTranscription = (message) => {
-				this.emit('message', message);
+				this.emit('transcription', message);
 			};
 			newConnection.onClosed = (tag) => {
 				this.outgoingConnections.delete(tag);

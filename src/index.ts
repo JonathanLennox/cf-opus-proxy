@@ -56,7 +56,13 @@ export default {
 				server.close();
 			});
 
-			session.on('message', (data: any) => {
+			session.on('interim_transcription', (data: any) => {
+				outbound?.send(data);
+				stub?.broadcastMessage(data);
+				server.send(data);
+			});
+
+			session.on('transcription', (data: any) => {
 				outbound?.send(data);
 				stub?.broadcastMessage(data);
 				server.send(data);

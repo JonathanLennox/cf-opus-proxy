@@ -89,6 +89,7 @@ export class OutgoingConnection {
 
 	private lastTranscriptTime?: number = undefined;
 
+	onInterimTranscription?: (message: string) => void = undefined;
 	onCompleteTranscription?: (message: string) => void = undefined;
 	onClosed?: (tag: string) => void = undefined;
 
@@ -395,10 +396,12 @@ export class OutgoingConnection {
 			return;
 		}
 		if (parsedMessage.type === 'conversation.item.input_audio_transcription.delta') {
+			const now = Date.now();
 			if (this.lastTranscriptTime !== undefined) {
-				this.lastTranscriptTime = Date.now();
+				this.lastTranscriptTime = now;
 			}
-			// TODO: some use cases will want to receive the audio transcription deltas also
+			const transcription = this.getTranscriptionMessage(parsedMessage.delta, now, true);
+			this.onInterimTranscription?.(transcription);
 		} else if (parsedMessage.type === 'conversation.item.input_audio_transcription.completed') {
 			let transcriptTime;
 			if (this.lastTranscriptTime !== undefined) {
